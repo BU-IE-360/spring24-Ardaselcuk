@@ -1,27 +1,9 @@
-## Welcome to GitHub Pages
+## Welcome to My GitHub Page
 
-You can use the editor on GitHub to maintain and preview the content for your website in Markdown files.
+My name is Arda and this is my page for the course IE360. My homeworks and my project for this course will be available in this page. 
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+### Homework 1
 
-### Markdown
-
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
-
-```markdown
-Syntax highlighted code block
-
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
 
 [Link](url) and ![Image](src)
 ```
