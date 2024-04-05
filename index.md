@@ -6,7 +6,7 @@ My name is Arda and this is my page for the course IE360. My homeworks and my pr
 
 
 [HTML File](https://bu-ie-360.github.io/spring24-Ardaselcuk/IE360HW1notebook.html)
-```
 [R Code](https://bu-ie-360.github.io/spring24-Ardaselcuk/IE360HW.R)
+
 
 
