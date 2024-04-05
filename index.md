@@ -5,7 +5,7 @@ My name is Arda and this is my page for the course IE360. My homeworks and my pr
 ### Homework 1
 
 
-[Link][(url)](https://bu-ie-360.github.io/spring24-Ardaselcuk/) and ![Image](src)
+[HTML File](https://bu-ie-360.github.io/spring24-Ardaselcuk/IE360HW1notebook.html)
 ```
 
 For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
