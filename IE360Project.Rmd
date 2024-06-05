@@ -1,0 +1,310 @@
+---
+title: "IE360 Project"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+require(base)
+require(data.table)
+require(datasets)
+require(data.sets)
+require(dplyr)
+require(forecast)
+require(GGally)
+require(ggplot2)
+require(ggstats)
+require(graphics)
+require(grDevices)
+require(lubridate)
+require(methods)
+require(readr)
+require(stats)
+require(utils)
+require(RcppRoll)
+require(tseries)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(ggcorrplot)
+library(ggridges)
+
+processed_weather <- read_csv("processed_weather.csv", 
+    col_types = cols(date = col_date(format = "%Y-%m-%d"), 
+        hour = col_time(format = "%H")))
+View(processed_weather)
+production <- read_csv("production.csv", 
+    col_types = cols(date = col_date(format = "%Y-%m-%d"), 
+        hour = col_time(format = "%H")))
+View(production)
+```
+
+```{r}
+processed_weather$location <- paste(processed_weather$lat, processed_weather$lon, sep = "_" )
+setDT(processed_weather)
+weather_wide = dcast(processed_weather, date + hour ~ location, value.var = c("dswrf_surface", "tcdc_low.cloud.layer","tcdc_middle.cloud.layer","tcdc_high.cloud.layer","tcdc_entire.atmosphere","uswrf_top_of_atmosphere","csnow_surface","dlwrf_surface","uswrf_surface","tmp_surface"))
+```
+
+```{r}
+combined_data <- merge(production, weather_wide, by = c("date","hour"), all.x = TRUE, all.y = FALSE)
+setDT(combined_data)
+combined_data[,datetime := as.POSIXct(paste(combined_data$date,combined_data$hour), format = "%Y-%m-%d %H:%M:%S")]
+combined_data[,mon:=as.character(month(date,label=T))]
+hour_id <- 0:23
+combined_data <- cbind(combined_data,hour_id)
+```
+
+```{r}
+combined_data$is_sun <-0
+condition_1 <- combined_data$hour_id > 5
+condition_2 <- combined_data$hour_id < 20
+combined_data$is_sun[condition_1 & condition_2] = 1
+```
+
+```{r}
+combined_data$avg_temp <- rowMeans(combined_data[,229:253])
+combined_data$avg_DSWRF <- rowMeans(combined_data[,4:28])
+combined_data$avg_lcloud <- rowMeans(combined_data[,29:53])
+combined_data$avg_mcloud <- rowMeans(combined_data[,54:78])
+combined_data$avg_hcloud <- rowMeans(combined_data[,79:103])
+combined_data$avg_tcloud <- rowMeans(combined_data[,104:128])
+combined_data$avg_USWRFtop <- rowMeans(combined_data[,129:153])
+combined_data$avg_DLWRFsurf <- rowMeans(combined_data[,179:203])
+combined_data$avg_USWRFsurf <- rowMeans(combined_data[,204:228])
+combined_data$avg_CSNOW <- rowMeans(combined_data[,154:178])
+```
+
+```{r}
+daily_productions <- production %>%
+  group_by(date) %>%
+  summarize(daily_prod = sum(production))
+setDT(daily_productions)
+
+weekly_productions <- production %>%
+  group_by(year = year(date), week = isoweek(date)) %>%
+  summarize(weekly_prod = sum(production))
+setDT(weekly_productions)
+weekly_productions[,weeks:=1:.N]
+
+monthly_productions <- production %>%
+  group_by(year = year(date), month = month(date)) %>%
+  summarize(monthly_prod = sum(production))
+setDT(monthly_productions)
+monthly_productions[,months:=1:.N]
+```
+
+```{r}
+ggplot(combined_data, aes(x = date, y = production)) + geom_line() + labs(title = "Hourly Energy Production Data", x = "Date", y = "Energy Production ")
+ggplot(daily_productions, aes(x = date, y = daily_prod)) + geom_line() + labs(title = "Daily Energy Production Data", x = "Date", y = "Energy Production ")
+ggplot(weekly_productions, aes(x = weeks, y = weekly_prod)) + geom_line() + labs(title = "Weekly Energy Production Data", x = "Date", y = "Energy Production ")
+ggplot(monthly_productions, aes(x = months, y = monthly_prod)) + geom_line()+ labs(title = "Monthly Energy Production Data", x = "Date", y = "Energy Production ")
+```
+
+```{r}
+plot(acf(combined_data$production,100), main = "Hourly Energy Production Autocorrelation")
+plot(acf(daily_productions$daily_prod,365), main = "Daily Energy Production Autocorrelation")
+plot(acf(weekly_productions$weekly_prod,108), main = "Weekly Energy Production Autocorrelation")
+plot(acf(monthly_productions$monthly_prod), main = "Monthly Energy Production Autocorrelation")
+```
+
+```{r}
+plot(pacf(combined_data$production,72), main = "Hourly Energy Production Partial Autocorrelation")
+plot(pacf(daily_productions$daily_prod), main = "Daily Energy Production Partial Autocorrelation")
+```
+
+
+```{r}
+production_available <- combined_data %>%
+  filter(is_sun == 1)
+ggplot(production_available[date == "2023-05-15"], aes(x = datetime, y = production)) + geom_line()
+ggplot(combined_data[date > "2024-02-01" & date < "2024-05-15"], aes(x = datetime, y = production)) + geom_line() + labs(title = "Hourly Energy Production Data 01.02.2024-15.05.2024", x = "Date", y = "Energy Production ")
+```
+
+```{r}
+corr_check <- data.frame(production_available$production, production_available$datetime,production_available$avg_DLWRFsurf, production_available$avg_temp, production_available$avg_hcloud, production_available$avg_lcloud, production_available$avg_mcloud, production_available$avg_tcloud, production_available$avg_USWRFsurf, production_available$avg_USWRFtop, production_available$avg_CSNOW, production_available$avg_DSWRF)
+ggpairs(corr_check)
+```
+
+```{r}
+ggplot(production_available, aes(x = avg_temp, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average Temp", x = "Average Temp", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_DSWRF, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average DSWRF Surface", x = "Average DSWRF", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_tcloud, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average Total Cloud", x = "Average Total Cloud", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_hcloud, y = production)) + geom_line() + geom_smooth(method = "loess") +  labs(title = "Hourly Energy Production vs. Average High Cloud", x = "Average High Cloud", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_mcloud, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average Middle Cloud", x = "Average Middle Cloud", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_lcloud, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average Low Cloud", x = "Average Low Cloud", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_USWRFsurf, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average USWRF Surface", x = "Average USWRF Surface", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_USWRFtop, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average USWRF Atmosphere", x = "Average USWRF Top", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_DLWRFsurf, y = production)) + geom_line() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average DLWRF Surface", x = "Average DLWRF", y = "Energy Production ")
+ggplot(production_available, aes(x = avg_CSNOW, y = production)) + geom_point() + geom_smooth(method = "loess") + labs(title = "Hourly Energy Production vs. Average Snow", x = "Average Snow", y = "Energy Production ")
+```
+
+
+```{r}
+ggplot(production_available, aes(x = datetime, y = production)) + geom_line() + geom_smooth(method = "loess") + geom_smooth(method = "lm") + labs(title = "Hourly Energy Production Smoothed", x = "Time", y = "Energy Production ")
+```
+
+```{r}
+production_available[,Lag14:= shift(production,14)]
+production_available[,Lag1 := shift(production,1)]
+production_available[,diff14 := production-Lag14]
+```
+
+```{r}
+Test_date_start = "2024-02-01"
+Test_date_end = "2024-05-15"
+
+model_data_tr <- production_available[date < Test_date_start]
+model_data_test <- production_available[date >= Test_date_start & date <= Test_date_end]
+
+```
+
+```{r}
+tsr1 <- lm(production ~ mon + as.factor(hour_id) + Lag14 + Lag1, model_data_tr)
+summary(tsr1)
+checkresiduals(tsr1)
+```
+
+```{r}
+prediction_data_tsr = copy(model_data_test)
+prediction_data_tsr[, actual:= model_data_test$production]
+prediction_data_tsr[, prediction_model1 := predict(tsr1,model_data_test)]
+prediction_data_tsr$prediction_model1[prediction_data_tsr$prediction_model1 < 0] = 0
+prediction_data_tsr[, residual_model1 := actual - prediction_model1]
+ggplot(prediction_data_tsr, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model1, color = "model 1"))
+```
+
+```{r}
+tsr2 <- lm(production ~ -1 +mon + as.factor(hour_id) + Lag14 + Lag1 + avg_temp + avg_DSWRF + avg_lcloud + avg_mcloud + avg_hcloud + avg_tcloud + avg_USWRFtop + avg_DLWRFsurf + avg_USWRFsurf + avg_CSNOW, model_data_tr)
+summary(tsr2)
+checkresiduals(tsr2)
+```
+```{r}
+prediction_data_tsr[, prediction_model2 := predict(tsr2,model_data_test)]
+prediction_data_tsr$prediction_model2[prediction_data_tsr$prediction_model2 < 0] = 0
+prediction_data_tsr[, residual_model2 := actual - prediction_model2]
+ggplot(prediction_data_tsr, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model2, color = "model 2"))
+```
+
+
+```{r}
+tsr3 <- lm(production ~ -1 +mon + as.factor(hour_id) + Lag14 + Lag1 + avg_temp + avg_DSWRF + avg_mcloud + avg_tcloud + avg_DLWRFsurf + avg_USWRFsurf + avg_CSNOW, model_data_tr)
+summary(tsr3)
+checkresiduals(tsr3)
+```
+```{r}
+prediction_data_tsr[, prediction_model3 := predict(tsr3,model_data_test)]
+prediction_data_tsr$prediction_model3[prediction_data_tsr$prediction_model3 < 0] = 0
+prediction_data_tsr[, residual_model3 := actual - prediction_model3]
+ggplot(prediction_data_tsr, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model3, color = "model 3"))
+```
+
+
+```{r}
+tsr4 <- lm(production ~ -1 +mon:as.factor(hour_id) + Lag14 + Lag1 + avg_temp + avg_DSWRF + avg_lcloud + avg_tcloud +  avg_DLWRFsurf + avg_USWRFsurf + avg_CSNOW, model_data_tr)
+summary(tsr4)
+checkresiduals(tsr4)
+```
+
+```{r}
+prediction_data_tsr[, prediction_model4 := predict(tsr4,model_data_test)]
+prediction_data_tsr$prediction_model4[prediction_data_tsr$prediction_model4 < 0] = 0
+prediction_data_tsr[, residual_model4 := actual - prediction_model4]
+ggplot(prediction_data_tsr, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model4, color = "model 4"))
+```
+
+```{r}
+sum_actual = sum(prediction_data_tsr$actual)
+sum_error1 = sum(abs(prediction_data_tsr$residual_model1))
+sum_error2 = sum(abs(prediction_data_tsr$residual_model2))
+sum_error3 = sum(abs(prediction_data_tsr$residual_model3))
+sum_error4 = sum(abs(prediction_data_tsr$residual_model4))
+wmape_df <- data_frame(model = c("Model 1", "Model 2", "Model 3", "Model 4"),WMAPE = c(sum_error1/sum_actual, sum_error2/sum_actual, sum_error3/sum_actual, sum_error4/sum_actual), Model_Type = c("Time Series Regression","Time Series Regression","Time Series Regression","Time Series Regression"))
+wmape_df
+
+```
+
+```{r}
+kpss.test(model_data_tr$production, null = "Trend")
+```
+
+
+```{r}
+ggplot(model_data_tr, aes(x = datetime, y = diff14)) + geom_line() + labs(title = "Diff14 Production Data", x = "Date Time", y = "Production Diff14")
+kpss.test(model_data_tr$diff14, null = "Trend")
+```
+
+```{r}
+plot(acf(model_data_tr[complete.cases(model_data_tr)]$diff14), main = "ACF for Diff14 Production")
+plot(pacf(model_data_tr[complete.cases(model_data_tr)]$diff14), main = "PACF for Diff14 Production")
+```
+
+```{r}
+arima_model <- auto.arima(production_available$diff14, seasonal = F, trace = T, stepwise = F, approximation = F)
+arima_model
+```
+
+```{r}
+plot(acf(arima_model$residuals), main = "ACF for ARIMA(5,0,0) Residuals")
+plot(pacf(arima_model$residuals), main = "PACF for ARIMA(5,0,0) Residuals")
+checkresiduals(arima_model)
+```
+
+
+```{r}
+fc_period = length(model_data_test$Lag14)
+summary(arima_model)
+forecasted_diff_arima <- forecast(arima_model,fc_period)
+prediction_data_arima <- copy(model_data_test)
+prediction_data_arima[, actual := production]
+prediction_data_arima[, prediction_diff_model5 := forecasted_diff_arima$mean]
+prediction_data_arima[, prediction_model5 := prediction_diff_model5 + Lag14]
+prediction_data_arima[, residual_model5 := actual - prediction_model5]
+ggplot(prediction_data_arima, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model5, color = "model 5"))
+```
+
+```{r}
+sum_actual = sum(prediction_data_arima$actual)
+sum_error5 = sum(abs(prediction_data_arima$residual_model5))
+wmape_df = rbind(wmape_df, c("Model 5", sum_error5/sum_actual, "ARIMA(5,0,0)"))
+wmape_df
+```
+
+```{r}
+ts_data <- ts(model_data_tr$diff14, frequency = 14)
+sarima_model <- auto.arima(ts_data, seasonal = T, trace = T, stepwise = F, approximation = F)
+sarima_model
+```
+
+```{r}
+plot(acf(sarima_model$residuals), main = "ACF for ARIMA(3,0,0)(2,0,0)[14] Residuals")
+plot(pacf(sarima_model$residuals), main = "PACF for ARIMA(3,0,0)(2,0,0)[14] Residuals")
+checkresiduals(sarima_model)
+```
+
+```{r}
+summary(sarima_model)
+forecasted_diff_sarima <- forecast(sarima_model,fc_period)
+prediction_data_arima[, prediction_diff_model6 := forecasted_diff_sarima$mean]
+prediction_data_arima[, prediction_model6 := prediction_diff_model6 + Lag14]
+prediction_data_arima[, residual_model6 := actual - prediction_model6]
+ggplot(prediction_data_arima, aes(x = datetime)) + geom_line(aes(y = actual, color = "actual")) + geom_line(aes(y = prediction_model6, color = "model 6"))
+```
+
+```{r}
+sum_error6 = sum(abs(prediction_data_arima$residual_model6))
+wmape_df = rbind(wmape_df, c("Model 6", sum_error6/sum_actual, "ARIMA(3,0,0)(2,0,0)[14]"))
+wmape_df
+```
+
+```{r}
+Residuals <- data_frame(model_1 = prediction_data_tsr$residual_model1,model_2 = prediction_data_tsr$residual_model2, model_3 = prediction_data_tsr$residual_model3, model_4 = prediction_data_tsr$residual_model4, model_5 = prediction_data_arima$residual_model5, model_6 = prediction_data_arima$residual_model6)
+library(tidyr)
+Residual_model <- Residuals %>%
+  pivot_longer(cols = starts_with("model"), names_to = "model", values_to = "residual")
+```
+
+```{r}
+ggplot(Residual_model, aes(x = residual, y = model, fill = model)) +geom_density_ridges() + labs(title  = "Residual Distributions of Each Model")
+```
+
